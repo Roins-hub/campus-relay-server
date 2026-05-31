@@ -76,6 +76,16 @@ export class RelayStore {
     return device;
   }
 
+  assignDeviceToUser(deviceId, userId, status, lastSeenAt) {
+    const device = this.getDeviceById(deviceId);
+    if (!device) return null;
+    device.user_id = userId;
+    device.status = status;
+    device.last_seen_at = lastSeenAt;
+    this.save();
+    return device;
+  }
+
   createPairingCode(pairingCode) {
     this.data.pairingCodes.push(pairingCode);
     this.save();
@@ -83,7 +93,10 @@ export class RelayStore {
   }
 
   getActivePairingCode(code, userId) {
-    return this.data.pairingCodes.find((item) => item.code === code && item.user_id === userId && !item.used_at);
+    return this.data.pairingCodes.find((item) => {
+      const userMatches = userId === undefined ? true : item.user_id === userId;
+      return item.code === code && userMatches && !item.used_at;
+    });
   }
 
   markPairingCodeUsed(code, usedAt) {

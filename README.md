@@ -1,8 +1,10 @@
 # campus-relay-server
 
-校园智办服务器中转层。它只负责账号、设备、配对、WebSocket 消息转发和任务状态记录，不运行 Hermes、OCR、浏览器自动化或知识库。
+Campus relay server for EduHermes. It only handles accounts, device binding,
+WebSocket relay, command status, and notifications. It does not run Hermes, OCR,
+browser automation, or the campus knowledge base.
 
-## 本地运行
+## Local Run
 
 ```bash
 cp .env.example .env
@@ -10,9 +12,10 @@ npm install
 npm start
 ```
 
-默认监听 `127.0.0.1:8780`，建议在服务器上用 Nginx 反代到 HTTPS 域名。
+Default listen address is `127.0.0.1:8780`. In production, expose it through
+Nginx HTTPS, for example `https://relay.hhlai.xyz`.
 
-## 主要接口
+## Main APIs
 
 - `GET /health`
 - `POST /auth/register`
@@ -20,6 +23,8 @@ npm start
 - `GET /me`
 - `POST /devices/register`
 - `GET /devices`
+- `POST /pairing/desktop/start`
+- `POST /pairing/claim`
 - `POST /devices/:deviceId/pairing-code`
 - `POST /devices/pair`
 - `POST /commands`
@@ -27,34 +32,55 @@ npm start
 - `WS /ws/desktop?token=<deviceToken>`
 - `WS /ws/mobile?token=<userJwt>`
 
-## 部署到宝塔
+## Desktop Pairing Flow
 
-服务器目录建议使用：
+1. Desktop app calls `POST /pairing/desktop/start`.
+2. Server returns `{ code, pairingUrl, expiresAt, device, deviceToken }`.
+3. Desktop stores `deviceToken` and shows `code` or `pairingUrl` as a QR code.
+4. Mobile app logs in and calls `POST /pairing/claim` with `{ code }`.
+5. Server binds the pending desktop device to the mobile user's account.
+
+Example:
+
+```bash
+curl -X POST https://relay.hhlai.xyz/pairing/desktop/start \
+  -H "Content-Type: application/json" \
+  -d '{"deviceName":"宿舍电脑","platform":"windows"}'
+```
+
+```bash
+curl -X POST https://relay.hhlai.xyz/pairing/claim \
+  -H "Authorization: Bearer <userJwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"123456"}'
+```
+
+## Deploy With Baota
+
+Suggested server directory:
 
 ```bash
 /www/wwwroot/campus-relay-server
 ```
 
-第一次 Git 部署：
+First deploy:
 
 ```bash
 cd /www/wwwroot
-git clone <你的仓库地址> campus-relay-server
+git clone https://github.com/Roins-hub/campus-relay-server.git campus-relay-server
 cd campus-relay-server
 bash scripts/deploy.sh
 ```
 
-后续更新：
+Update:
 
 ```bash
 cd /www/wwwroot/campus-relay-server
 bash scripts/update-server.sh
 ```
 
-如果不用 Git，只是手动上传文件，也可以直接运行：
+If GitHub is slow in China, keep the remote mirror:
 
 ```bash
-npm install --omit=dev
-pm2 start src/server.js --name campus-relay-server
-pm2 save
+git remote set-url origin https://ghfast.top/https://github.com/Roins-hub/campus-relay-server.git
 ```
