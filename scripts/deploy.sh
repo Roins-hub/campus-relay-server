@@ -22,5 +22,15 @@ else
 fi
 
 pm2 save
-curl -fsS http://127.0.0.1:8780/health
-echo
+
+for attempt in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:8780/health; then
+    echo
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "campus-relay-server did not pass health check. Recent logs:" >&2
+pm2 logs "${APP_NAME}" --lines 50 --nostream >&2
+exit 1
