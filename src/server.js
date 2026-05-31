@@ -30,6 +30,15 @@ function pairingUrl(code) {
   return `campus://pair?code=${encodeURIComponent(code)}`;
 }
 
+export function shouldListenOnStartup({
+  argv1 = process.argv[1],
+  env = process.env,
+  moduleUrl = import.meta.url
+} = {}) {
+  if (env.pm_id !== undefined || env.NODE_APP_INSTANCE !== undefined) return true;
+  return Boolean(argv1 && moduleUrl === pathToFileURL(argv1).href);
+}
+
 export async function buildApp(inputConfig = {}) {
   const config = { ...defaultConfig, ...inputConfig };
   const db = createDatabase(config.dbPath);
@@ -360,7 +369,7 @@ export async function buildApp(inputConfig = {}) {
   return app;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (shouldListenOnStartup()) {
   const app = await buildApp();
   await app.listen({ host: defaultConfig.host, port: defaultConfig.port });
 }

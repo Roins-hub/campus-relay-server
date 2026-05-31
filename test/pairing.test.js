@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildApp } from '../src/server.js';
+import { buildApp, shouldListenOnStartup } from '../src/server.js';
 
 async function withApp(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'campus-relay-'));
@@ -76,4 +76,12 @@ test('desktop can create a pairing code that a logged-in mobile user claims', as
     });
     assert.equal(secondClaim.statusCode, 400);
   });
+});
+
+test('server starts listening when launched by PM2', () => {
+  assert.equal(shouldListenOnStartup({
+    argv1: '/usr/local/lib/node_modules/pm2/lib/ProcessContainerFork.js',
+    env: { pm_id: '0' },
+    moduleUrl: 'file:///www/wwwroot/campus-relay-server/src/server.js'
+  }), true);
 });
