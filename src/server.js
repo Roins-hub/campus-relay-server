@@ -5,8 +5,10 @@ import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createDatabase, nowIso, publicCommand, publicDevice } from './db.js';
+import { createDatabase, nowIso, publicCommand, publicDevice, publicFile } from './db.js';
 
 dotenv.config();
 
@@ -15,6 +17,7 @@ export const defaultConfig = {
   host: process.env.HOST || '127.0.0.1',
   jwtSecret: process.env.JWT_SECRET || 'dev-only-change-me',
   dbPath: process.env.DB_PATH || './data/relay.sqlite',
+  uploadDir: process.env.UPLOAD_DIR || './data/uploads',
   corsOrigin: process.env.CORS_ORIGIN || '*'
 };
 
@@ -28,6 +31,14 @@ function sixDigitCode() {
 
 function pairingUrl(code) {
   return `campus://pair?code=${encodeURIComponent(code)}`;
+}
+
+function safeFileName(name) {
+  const cleaned = String(name || 'upload.bin')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/^\.+$/, 'upload.bin')
+    .slice(0, 160);
+  return cleaned || 'upload.bin';
 }
 
 export function shouldListenOnStartup({
@@ -276,6 +287,67 @@ export async function buildApp(inputConfig = {}) {
     const row = db.getCommandForUser(request.params.commandId, auth.sub);
     if (!row) return reply.code(404).send({ error: 'command not found' });
     return { command: publicCommand(row) };
+  });
+
+  app.post('/files', async (request, reply) => {
+    const auth = verifyUserToken(request);
+    const { name, type, contentBase64 } = request.body || {};
+    if (!contentBase64 || typeof contentBase64 !== 'string') {
+      return reply.code(400).send({ error: 'contentBase64 is required' });
+    }
+
+    const buffer = Buffer.from(contentBase64, 'base64');
+    if (buffer.length === 0) {
+      return reply.code(400).send({ error: 'file content is empty' });
+    }
+
+    const fileId = id('fil');
+    const fileName = safeFileName(name);
+    const createdAt = nowIso();
+    const dir = path.resolve(config.uploadDir, auth.sub, fileId);
+    fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    const row = db.createFile({
+      id: fileId,
+      user_id: auth.sub,
+      name: fileName,
+      mime_type: String(type || 'application/octet-stream'),
+      size: buffer.length,
+      path: filePath,
+      created_at: createdAt
+    });
+
+    return reply.code(201).send({ file: publicFile(row) });
+  });
+
+  app.get('/files/:fileId/download', async (request, reply) => {
+    const row = db.getFileById(request.params.fileId);
+    if (!row) return reply.code(404).send({ error: 'file not found' });
+
+    let authorized = false;
+    const header = request.headers.authorization || '';
+    if (header.startsWith('Bearer ')) {
+      try {
+        authorized = verifyUserToken(request).sub === row.user_id;
+      } catch {
+        authorized = false;
+      }
+    }
+
+    if (!authorized && request.query?.deviceToken) {
+      const device = db.getDeviceByToken(String(request.query.deviceToken));
+      authorized = Boolean(device && device.user_id === row.user_id);
+    }
+
+    if (!authorized) return reply.code(401).send({ error: 'Missing token' });
+    if (!fs.existsSync(row.path)) return reply.code(404).send({ error: 'file content not found' });
+
+    reply.header('content-type', row.mime_type || 'application/octet-stream');
+    reply.header('content-length', row.size);
+    reply.header('content-disposition', `attachment; filename="${encodeURIComponent(row.name)}"`);
+    return reply.send(fs.createReadStream(row.path));
   });
 
   app.get('/ws/desktop', { websocket: true }, (socket, request) => {

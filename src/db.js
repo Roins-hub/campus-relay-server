@@ -5,7 +5,8 @@ const emptyData = () => ({
   users: [],
   devices: [],
   pairingCodes: [],
-  remoteCommands: []
+  remoteCommands: [],
+  files: []
 });
 
 export class RelayStore {
@@ -138,6 +139,16 @@ export class RelayStore {
     this.save();
     return command;
   }
+
+  createFile(file) {
+    this.data.files.push(file);
+    this.save();
+    return file;
+  }
+
+  getFileById(fileId) {
+    return this.data.files.find((file) => file.id === fileId);
+  }
 }
 
 export function createDatabase(dbPath) {
@@ -171,5 +182,17 @@ export function publicCommand(row) {
     result: row.result_json ? JSON.parse(row.result_json) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+export function publicFile(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    mimeType: row.mime_type,
+    size: row.size,
+    downloadUrl: `/files/${row.id}/download`,
+    createdAt: row.created_at
   };
 }
